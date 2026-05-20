@@ -9,7 +9,7 @@ export default function Home() {
   const downloadQR = () => {
     const link = document.createElement('a');
     link.href = result.qr;
-    link.download = `QR-SowanQR-${result.code}.png`;
+    link.download = `QR-SowarnaQR-${result.code}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -34,10 +34,10 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen relative flex items-center justify-center p-4 sm:p-8 overflow-hidden bg-slate-50">
+    <main className="min-h-screen relative flex items-center justify-center p-4 sm:p-8 bg-slate-50">
 
       {/* Efek Latar Belakang (Subtle Gradient orbs) */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-indigo-300/30 blur-[100px]"></div>
         <div className="absolute top-[60%] -right-[10%] w-[40%] h-[40%] rounded-full bg-cyan-300/30 blur-[100px]"></div>
       </div>
@@ -58,7 +58,8 @@ export default function Home() {
               <input type="text" required
                 className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700 placeholder-slate-400"
                 placeholder="Masukkan nama Anda"
-                onChange={e => setForm({ ...form, nama: e.target.value })} />
+                onChange={e => setForm({ ...form, nama: e.target.value })}
+                suppressHydrationWarning />
             </div>
 
             <div className="space-y-1.5">
@@ -66,7 +67,8 @@ export default function Home() {
               <input type="text" required
                 className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700 placeholder-slate-400"
                 placeholder="Asal instansi"
-                onChange={e => setForm({ ...form, instansi: e.target.value })} />
+                onChange={e => setForm({ ...form, instansi: e.target.value })}
+                suppressHydrationWarning />
             </div>
 
             <div className="space-y-1.5">
@@ -74,10 +76,11 @@ export default function Home() {
               <input type="text" required
                 className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700 placeholder-slate-400"
                 placeholder="Contoh: 628123456789"
-                onChange={e => setForm({ ...form, whatsapp: e.target.value })} />
+                onChange={e => setForm({ ...form, whatsapp: e.target.value })}
+                suppressHydrationWarning />
             </div>
 
-            <button type="submit" disabled={loading}
+            <button type="submit" disabled={loading} suppressHydrationWarning
               className="w-full mt-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 px-4 rounded-xl shadow-lg shadow-indigo-200 transition-all duration-300 transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none">
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
