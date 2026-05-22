@@ -7,8 +7,8 @@ import { supabase } from '@/lib/supabase';
 
 export async function POST(req) {
   try {
-    // 1. Ambil data HANYA SEKALI menggunakan req.json()
-    const { nama, instansi, whatsapp } = await req.json();
+    // 1. Ambil SEMUA data dari frontend (termasuk kolom baru dari Guru)
+    const { nama, instansi, whatsapp, nik, keperluan, menemui } = await req.json();
     const kodeBooking = `SQ-${Date.now()}`;
 
     let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -40,13 +40,19 @@ export async function POST(req) {
       throw new Error("Missing GOOGLE_SHEET_ID environment variable.");
     }
 
-    // 2. SIMPAN KE SUPABASE
+    // 2. SIMPAN KE SUPABASE DENGAN DATA LENGKAP
     const { error: supabaseError } = await supabase
       .from('tamu')
       .insert([{
         nama: nama,
         instansi: instansi,
-        whatsapp: whatsapp
+        whatsapp: whatsapp,
+        nik: nik,
+        keperluan: keperluan,
+        menemui: menemui,
+        kode: kodeBooking,
+        status: 'Pending',
+        waktu_hadir: '-'
       }]);
 
     if (supabaseError) {
@@ -63,6 +69,9 @@ export async function POST(req) {
       Nama: nama,
       Instansi: instansi,
       WhatsApp: whatsapp,
+      NIK: nik,
+      Keperluan: keperluan,
+      Menemui: menemui,
       Kode: kodeBooking,
       Status: 'Pending',
       'Waktu Hadir': '-'
@@ -82,7 +91,7 @@ export async function POST(req) {
 
       const formData = new URLSearchParams();
       formData.append('target', formattedWhatsapp);
-      formData.append('message', `Halo *${nama}*,\n\nReservasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: ${kodeBooking}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerima kasih!`);
+      formData.append('message', `Halo *${nama}*,\n\nReservasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: ${kodeBooking}\n\nDengan keperluan: ${keperluan}\nAkan menemui: ${menemui}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerima kasih! KELOMPOK PJBL BUKU TAMU`);
 
       const waResponse = await fetch('https://api.fonnte.com/send', {
         method: 'POST',

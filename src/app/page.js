@@ -2,7 +2,14 @@
 import { useState } from 'react';
 
 export default function Home() {
-  const [form, setForm] = useState({ nama: '', instansi: '', whatsapp: '' });
+  const [form, setForm] = useState({
+    nama: '',
+    instansi: '',
+    whatsapp: '',
+    nik: '',
+    keperluan: '',
+    menemui: ''
+  });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -72,12 +79,36 @@ export default function Home() {
             </div>
 
             <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-slate-700">NIK</label>
+              <input type="text" required
+                className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700"
+                placeholder="Masukkan NIK Anda"
+                onChange={e => setForm({ ...form, nik: e.target.value })} />
+            </div>
+
+            <div className="space-y-1.5">
               <label className="block text-sm font-semibold text-slate-700">No. WhatsApp</label>
               <input type="text" required
                 className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700 placeholder-slate-400"
                 placeholder="Contoh: 628123456789"
                 onChange={e => setForm({ ...form, whatsapp: e.target.value })}
                 suppressHydrationWarning />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-slate-700">Keperluan</label>
+              <input type="text" required
+                className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700"
+                placeholder="Contoh: Urusan Dinas / Bertamu"
+                onChange={e => setForm({ ...form, keperluan: e.target.value })} />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-slate-700">Ingin Menemui Siapa</label>
+              <input type="text" required
+                className="w-full px-4 py-3 bg-slate-50/50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all duration-200 text-slate-700"
+                placeholder="Nama Guru / Staff"
+                onChange={e => setForm({ ...form, menemui: e.target.value })} />
             </div>
 
             <button type="submit" disabled={loading} suppressHydrationWarning

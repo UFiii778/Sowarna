@@ -1,43 +1,33 @@
+// src/app/admin/page.js
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function AdminDashboard() {
-    const [tamu, setTamu] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({ nama: '', instansi: '', whatsapp: '' });
+    const [historyTamu, setHistoryTamu] = useState([]);
+    const [scanResult, setScanResult] = useState(null);
+    const [errorMsg, setErrorMsg] = useState('');
+    const scannerRef = useRef(null);
 
-    // 1. Fungsi Mengambil Data dari Supabase
-    const fetchTamu = async () => {
-        setLoading(true);
-        const { data, error } = await supabase
-            .from('tamu')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            console.error("DETAIL ERROR DARI SUPABASE:", error);
-        } else {
-            console.log("DATA BERHASIL DIAMBIL:", data);
-            setTamu(data);
-        }
-        setLoading(false);
-    };
-
-    // 2. Setup Real-time Listener (Otomatis Update tanpa Refresh)
+    // 1. Ambil data awal dan aktifkan Real-time Listener Supabase
     useEffect(() => {
+        const fetchTamu = async () => {
+            const { data } = await supabase
+                .from('tamu')
+                .select('*')
+                .order('id', { ascending: false });
+            if (data) setHistoryTamu(data);
+        };
+
         fetchTamu();
 
+        // Listener Real-time: Jika ada insert/update di Supabase, langsung perbarui UI dashboard
         const channel = supabase
-            .channel('realtime_tamu')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'tamu' },
-                () => {
-                    fetchTamu();
-                }
-            )
+            .channel('schema-db-changes')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tamu' }, () => {
+                fetchTamu();
+            })
             .subscribe();
 
         return () => {
@@ -45,138 +35,123 @@ export default function AdminDashboard() {
         };
     }, []);
 
-    const handleDelete = async (id) => {
-        if (confirm('Apakah Anda yakin ingin menghapus data tamu ini?')) {
-            const { error } = await supabase.from('tamu').delete().eq('id', id);
-            if (error) alert('Gagal menghapus data');
-        }
-    };
-
-    const startEdit = (item) => {
-        setEditingId(item.id);
-        setEditForm({ nama: item.nama, instansi: item.instansi, whatsapp: item.whatsapp });
-    };
-
-    const handleUpdate = async (id) => {
-        const { error } = await supabase
-            .from('tamu')
-            .update(editForm)
-            .eq('id', id);
-
-        if (!error) {
-            setEditingId(null);
-        } else {
-            alert('Gagal memperbarui data');
-        }
-    };
-
+    // 2. Inisialisasi Kamera QR Scanner saat halaman dibuka
     useEffect(() => {
-        console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+        const scanner = new Html5QrcodeScanner('reader', {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+        });
+
+        scanner.render(async (decodedText) => {
+            // Jika berhasil men-scan teks/kode QR
+            try {
+                setErrorMsg('');
+                const res = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ kodeBooking: decodedText })
+                });
+                const result = await res.json();
+
+                if (result.success) {
+                    setScanResult(result.data);
+                } else {
+                    setErrorMsg(result.message);
+                    if (result.data) setScanResult(result.data); // Tetap tampilkan detail walau sudah hadir
+                }
+            } catch (err) {
+                setErrorMsg('Gagal memproses QR Code');
+            }
+        }, (error) => {
+            // Pembacaan QR biasa sedang mencari gambar (abaikan log error pencarian)
+        });
+
+        return () => {
+            scanner.clear().catch(err => console.error("Gagal clear scanner", err));
+        };
     }, []);
 
-    const totalTamu = tamu.length;
-
     return (
-        <main className="min-h-screen bg-slate-50 p-4 sm:p-8 text-slate-800">
-            <div className="max-w-6xl mx-auto space-y-6">
+        <main className="min-h-screen bg-slate-900 text-white p-6">
+            {/* Header */}
+            <div className="mb-8 border-b border-slate-800 pb-4">
+                <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">
+                    SowanQR Admin Dashboard
+                </h1>
+                <p className="text-slate-400 text-sm mt-1">Sistem Pemantauan & Scan Kehadiran Tamu Real-time</p>
+            </div>
 
-                {/* Header Dashboard */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <div>
-                        <h1 className="text-2xl font-bold text-indigo-600">Dashboard Admin</h1>
-                        <p className="text-sm text-slate-500">Kelola data pengunjung SowanQR secara langsung.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+                {/* KOLOM KIRI: SCANNER & HASIL NIK (4 COLS) */}
+                <div className="lg:col-span-5 space-y-6">
+                    <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-xl">
+                        <h2 className="text-lg font-bold mb-4 text-indigo-400"> Scan QR Code Tamu</h2>
+                        {/* Kamera Render Target */}
+                        <div id="reader" className="overflow-hidden rounded-xl bg-slate-900 border border-slate-700"></div>
                     </div>
 
-                    {/* Widget Counter Real-time */}
-                    <div className="bg-indigo-50 border border-indigo-100 px-6 py-3 rounded-2xl flex items-center gap-4 shadow-sm shadow-indigo-100">
-                        <span className="relative flex h-3 w-3">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                        </span>
-                        <div>
-                            <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Total Tamu (Real-time)</p>
-                            <p className="text-3xl font-extrabold text-slate-900">{totalTamu}</p>
+                    {/* Dinamis Teks Sesuai Permintaan Guru (Contoh History Sukses) */}
+                    {scanResult && (
+                        <div className={`p-6 rounded-2xl border transition-all ${errorMsg ? 'bg-amber-500/10 border-amber-500/30' : 'bg-emerald-500/10 border-emerald-500/30'}`}>
+                            <h3 className={`text-md font-bold mb-2 ${errorMsg ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                {errorMsg ? 'ℹ️ Informasi Tamu' : '🎉 Tamu Berhasil Hadir!'}
+                            </h3>
+                            <p className="text-sm leading-relaxed text-slate-200 bg-slate-950/50 p-4 rounded-xl border border-slate-800">
+                                " Nama <span className="text-cyan-400 font-bold">{scanResult.nama}</span> no <span className="text-cyan-400 font-bold">{scanResult.whatsapp}</span> NIK <span className="text-cyan-400 font-bold">{scanResult.nik || '-'}</span> dari sekolah/instansi <span className="text-cyan-400 font-bold">{scanResult.instansi}</span> hadir untuk keperluan <span className="text-cyan-400 font-bold">{scanResult.keperluan || '-'}</span> dan menemui dengan <span className="text-cyan-400 font-bold">{scanResult.menemui || '-'}</span> pada pukul <span className="text-emerald-400 font-bold">{scanResult.waktu_hadir}</span> "
+                            </p>
+                            {errorMsg && <p className="text-xs text-amber-400 mt-2 font-medium">* {errorMsg}</p>}
                         </div>
-                    </div>
+                    )}
                 </div>
 
-                {/* Tabel Data Tamu */}
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-xs font-bold uppercase tracking-wider">
-                                    <th className="px-6 py-4">Nama</th>
-                                    <th className="px-6 py-4">Instansi / Sekolah</th>
-                                    <th className="px-6 py-4">WhatsApp</th>
-                                    <th className="px-6 py-4 text-right">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-sm">
-                                {loading ? (
-                                    <tr>
-                                        <td colSpan="4" className="text-center py-8 text-slate-400">Memuat data tamu...</td>
+                {/* KOLOM KANAN: TABEL REKAP KEHADIRAN (7 COLS) */}
+                <div className="lg:col-span-7">
+                    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl overflow-hidden">
+                        <h2 className="text-lg font-bold mb-4 text-cyan-400">📋 Daftar Riwayat Pendaftaran & Kehadiran</h2>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="border-b border-slate-700 text-slate-400 text-sm font-semibold">
+                                        <th className="py-3 px-4">Nama / NIK</th>
+                                        <th className="py-3 px-4">Instansi & Keperluan</th>
+                                        <th className="py-3 px-4">Menemui</th>
+                                        <th className="py-3 px-4">Status</th>
+                                        <th className="py-3 px-4">Waktu</th>
                                     </tr>
-                                ) : tamu.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="4" className="text-center py-8 text-slate-400">Belum ada tamu yang mendaftar.</td>
-                                    </tr>
-                                ) : (
-                                    tamu.map((item) => (
-                                        <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                                            {editingId === item.id ? (
-                                                <>
-                                                    {/* Mode Edit Inline */}
-                                                    <td className="px-6 py-3">
-                                                        <input type="text" value={editForm.nama}
-                                                            className="w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                            onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })} />
-                                                    </td>
-                                                    <td className="px-6 py-3">
-                                                        <input type="text" value={editForm.instansi}
-                                                            className="w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                            onChange={(e) => setEditForm({ ...editForm, instansi: e.target.value })} />
-                                                    </td>
-                                                    <td className="px-6 py-3">
-                                                        <input type="text" value={editForm.whatsapp}
-                                                            className="w-full px-3 py-1.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                            onChange={(e) => setEditForm({ ...editForm, whatsapp: e.target.value })} />
-                                                    </td>
-                                                    <td className="px-6 py-3 text-right space-x-2">
-                                                        <button onClick={() => handleUpdate(item.id)}
-                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg transition">
-                                                            Simpan
-                                                        </button>
-                                                        <button onClick={() => setEditingId(null)}
-                                                            className="bg-slate-200 hover:bg-slate-300 text-slate-600 font-medium px-3 py-1.5 rounded-lg transition">
-                                                            Batal
-                                                        </button>
-                                                    </td>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    {/* Mode Tampilan Biasa */}
-                                                    <td className="px-6 py-4 font-semibold text-slate-700">{item.nama}</td>
-                                                    <td className="px-6 py-4 text-slate-600">{item.instansi}</td>
-                                                    <td className="px-6 py-4 font-mono text-slate-500">{item.whatsapp}</td>
-                                                    <td className="px-6 py-4 text-right space-x-2">
-                                                        <button onClick={() => startEdit(item)}
-                                                            className="text-indigo-600 hover:text-indigo-900 font-medium transition">
-                                                            Edit
-                                                        </button>
-                                                        <span className="text-slate-300">|</span>
-                                                        <button onClick={() => handleDelete(item.id)}
-                                                            className="text-rose-600 hover:text-rose-900 font-medium transition">
-                                                            Hapus
-                                                        </button>
-                                                    </td>
-                                                </>
-                                            )}
+                                </thead>
+                                <tbody className="divide-y divide-slate-800 text-sm">
+                                    {historyTamu.map((tamu) => (
+                                        <tr key={tamu.id} className="hover:bg-slate-700/30 transition-colors">
+                                            <td className="py-3.5 px-4">
+                                                <div className="font-bold text-slate-200">{tamu.nama}</div>
+                                                <div className="text-xs text-slate-500 font-mono">NIK: {tamu.nik || '-'}</div>
+                                            </td>
+                                            <td className="py-3.5 px-4">
+                                                <div className="text-slate-300">{tamu.instansi}</div>
+                                                <div className="text-xs text-indigo-300 italic">Perlu: {tamu.keperluan || '-'}</div>
+                                            </td>
+                                            <td className="py-3.5 px-4 text-slate-300 font-medium">{tamu.menemui || '-'}</td>
+                                            <td className="py-3.5 px-4">
+                                                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${tamu.status === 'Hadir'
+                                                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                                    }`}>
+                                                    {tamu.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-3.5 px-4 text-slate-400 font-mono text-xs">{tamu.waktu_hadir || '-'}</td>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                    ))}
+                                    {historyTamu.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" className="text-center py-8 text-slate-500 font-medium">Belum ada data pendaftar tamu.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
