@@ -1,118 +1,101 @@
-// src/app/api/booking/route.js
 import { NextResponse } from 'next/server';
-import { GoogleSpreadsheet } from 'google-spreadsheet';
-import { JWT } from 'google-auth-library';
-import QRCode from 'qrcode';
-import { supabase } from '@/lib/supabase';
 
-export async function POST(req) {
-  try {
-    // 1. Ambil SEMUA data dari frontend (termasuk kolom baru dari Guru)
-    const { nama, instansi, whatsapp, nik, keperluan, menemui } = await req.json();
-    const kodeBooking = `SQ-${Date.now()}`;
-
-    let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    let key = process.env.GOOGLE_PRIVATE_KEY;
-
-    if (!email || !key) {
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const secrets = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'secrets.json'), 'utf8'));
-        email = email || secrets.client_email;
-        key = key || secrets.private_key;
-      } catch (e) {
-        console.warn("Could not load secrets.json, relying on environment variables.");
-      }
-    }
-
-    if (!email || !key) {
-      throw new Error("Missing Google Service Account credentials. Please set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_PRIVATE_KEY.");
-    }
-
-    const auth = new JWT({
-      email: email,
-      key: key.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-
-    if (!process.env.GOOGLE_SHEET_ID) {
-      throw new Error("Missing GOOGLE_SHEET_ID environment variable.");
-    }
-
-    // 2. SIMPAN KE SUPABASE DENGAN DATA LENGKAP
-    const { error: supabaseError } = await supabase
-      .from('tamu')
-      .insert([{
-        nama: nama,
-        instansi: instansi,
-        whatsapp: whatsapp,
-        nik: nik,
-        keperluan: keperluan,
-        menemui: menemui,
-        kode: kodeBooking,
-        status: 'Pending',
-        waktu_hadir: '-'
-      }]);
-
-    if (supabaseError) {
-      console.error("Gagal simpan ke Supabase:", supabaseError);
-      return NextResponse.json({ success: false, message: "Gagal simpan database Supabase" }, { status: 500 });
-    }
-
-    // 3. SIMPAN KE GOOGLE SHEETS
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-
-    await sheet.addRow({
-      Nama: nama,
-      Instansi: instansi,
-      WhatsApp: whatsapp,
-      NIK: nik,
-      Keperluan: keperluan,
-      Menemui: menemui,
-      Kode: kodeBooking,
-      Status: 'Pending',
-      'Waktu Hadir': '-'
-    });
-
-    // 4. GENERATE QR CODE
-    const qrCodeDataUrl = await QRCode.toDataURL(kodeBooking);
-
-    // 5. KIRIM PESAN WHATSAPP VIA FONNTE
+export async function POST(request) {
     try {
-      let formattedWhatsapp = whatsapp.trim();
-      if (formattedWhatsapp.startsWith('0')) {
-        formattedWhatsapp = '62' + formattedWhatsapp.slice(1);
-      } else if (formattedWhatsapp.startsWith('+')) {
-        formattedWhatsapp = formattedWhatsapp.replace('+', '');
-      }
+        const data = await request.json();
 
-      const formData = new URLSearchParams();
-      formData.append('target', formattedWhatsapp);
-      formData.append('message', `Halo *${nama}*,\n\nReservasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: ${kodeBooking}\n\nDengan keperluan: ${keperluan}\nAkan menemui: ${menemui}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerima kasih! KELOMPOK PJBL BUKU TAMU`);
+        // ================= 1. PROSES KIRIM KE GOOGLE SHEETS =================
+        const authUrl = 'https://oauth2.googleapis.com/token';
+        const jwtHeader = b64e(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+        const now = Math.floor(Date.now() / 1000);
 
-      const waResponse = await fetch('https://api.fonnte.com/send', {
-        method: 'POST',
-        headers: {
-          'Authorization': process.env.WA_GATEWAY_TOKEN
-        },
-        body: formData
-      });
+        const jwtClaim = b64e(JSON.stringify({
+            iss: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+            scope: 'https://www.googleapis.com/auth/spreadsheets',
+            aud: authUrl,
+            exp: now + 3600,
+            iat: now
+        }));
 
-      const waResult = await waResponse.json();
-      console.log('Respons dari Fonnte:', waResult);
+        // Melakukan penandatanganan JWT sederhana menggunakan bantuan crypto bawaan Node.js
+        const crypto = require('crypto');
+        const sign = crypto.createSign('RSA-SHA256');
+        sign.update(`${jwtHeader}.${jwtClaim}`);
+        const jwtSignature = sign.sign(process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'), 'base64')
+            .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    } catch (waError) {
-      console.error('Gagal mengirim WA (tapi data sheet aman):', waError.message);
+        const tokenJwt = `${jwtHeader}.${jwtClaim}.${jwtSignature}`;
+
+        // Tukar JWT dengan Access Token Google
+        const tokenRes = await fetch(authUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${tokenJwt}`
+        });
+        const tokenData = await tokenRes.json();
+
+        if (tokenData.access_token) {
+            // Append data baris baru ke Google Sheets
+            await fetch(
+                `https://sheets.googleapis.com/v4/spreadsheets/${process.env.GOOGLE_SHEET_ID}/values/A1:append?valueInputOption=USER_ENTERED`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${tokenData.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        values: [[
+                            data.created_at,
+                            data.nik,
+                            data.nama,
+                            data.instansi,
+                            data.whatsapp,
+                            data.keperluan,
+                            data.menemui,
+                            data.kode,
+                            data.status,
+                            data.waktu_hadir
+                        ]]
+                    })
+                }
+            );
+        }
+
+        // ================= 2. PROSES KIRIM NOTIFIKASI FOONTE =================
+        const pesanWhatsapp =
+            `Halo *${data.nama}*, 
+Kunjungan baru Anda berhasil dibuat! ✨
+
+📋 *Detail Kunjungan:*
+• Kode Booking: ${data.kode}
+• Keperluan: ${data.keperluan}
+• Menemui: ${data.menemui}
+• Status: Menunggu Scan
+
+Silakan tunjukkan QR Code pada dashboard Anda kepada petugas saat tiba di lokasi. Terima kasih.`;
+
+        await fetch('https://api.foonte.com/send', {
+            method: 'POST',
+            headers: {
+                'Authorization': process.env.FOONTE_TOKEN
+            },
+            body: new URLSearchParams({
+                'target': data.whatsapp,
+                'message': pesanWhatsapp,
+                'countryCode': '62'
+            })
+        });
+
+        return NextResponse.json({ success: true, message: 'Google Sheets & WA Berhasil Terkirim' });
+
+    } catch (error) {
+        console.error("Error di API Booking:", error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
+}
 
-    // 6. KEMBALIKAN RESPONS SUKSES KE FRONTEND
-    return NextResponse.json({ success: true, qr: qrCodeDataUrl, code: kodeBooking });
-
-  } catch (error) {
-    console.error('Error pada API Booking:', error.message);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+// Fungsi pembantu enkripsi base64 url
+function b64e(str) {
+    return Buffer.from(str).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
