@@ -6,14 +6,18 @@ import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 export default function AdminDashboard() {
     const [activeTab, setActiveTab] = useState('kunjungan');
 
+    const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+    const [adminPassword, setAdminPassword] = useState('');
+
     const [historyKunjungan, setHistoryKunjungan] = useState([]);
     const [historyProfil, setHistoryProfil] = useState([]);
     const [scanResult, setScanResult] = useState(null);
     const [errorMsg, setErrorMsg] = useState('');
-
+    
     const [showAnimation, setShowAnimation] = useState(false);
     const [animationType, setAnimationType] = useState('success'); // 'success' atau 'error'
-
+    const [isScanning, setIsScanning] = useState(false);
+    
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedData, setSelectedData] = useState(null);
     const [selectedFile, setSelectedFile] = useState(null);
@@ -51,6 +55,13 @@ export default function AdminDashboard() {
     };
 
     useEffect(() => {
+        const isAuth = localStorage.getItem('admin_authenticated');
+        if (isAuth === 'true') {
+            setIsAdminAuthenticated(true);
+        } else {
+            return;
+        }
+
         refreshAllData();
 
         const channelKunjungan = supabase
@@ -80,17 +91,27 @@ export default function AdminDashboard() {
             supabase.removeChannel(channelKunjungan);
             supabase.removeChannel(channelProfil);
         };
-    }, []);
+    }, [isAdminAuthenticated]);
 
     useEffect(() => {
+        if (!isAdminAuthenticated) return;
+
         const scanner = new Html5QrcodeScanner('reader', {
             fps: 10,
             qrbox: { width: 250, height: 250 },
         });
 
+        let scanLocked = false;
+
         scanner.render(async (decodedText) => {
+            // JIKA SEDANG MEMPROSES SCAN, JANGAN KIRIM REQUEST LAGI!
+            if (scanLocked) return; 
+            
+            scanLocked = true;
+            setIsScanning(true); 
+            setErrorMsg('');
+
             try {
-                setErrorMsg('');
                 const res = await fetch('/api/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -102,27 +123,42 @@ export default function AdminDashboard() {
                     setScanResult(result.data);
                     setAnimationType('success');
                     setShowAnimation(true);
-                    setTimeout(() => setShowAnimation(false), 2500);
+                    
+                    setTimeout(() => {
+                        setShowAnimation(false);
+                        scanLocked = false; 
+                        setIsScanning(false);
+                    }, 3000);
                 } else {
                     setErrorMsg(result.message);
                     if (result.data) setScanResult(result.data);
                     setAnimationType('error');
                     setShowAnimation(true);
-                    setTimeout(() => setShowAnimation(false), 2500);
+                    
+                    setTimeout(() => {
+                        setShowAnimation(false);
+                        scanLocked = false;
+                        setIsScanning(false);
+                    }, 3000);
                 }
             } catch (err) {
                 setErrorMsg('Gagal memproses QR Code');
                 setAnimationType('error');
                 setShowAnimation(true);
-                setTimeout(() => setShowAnimation(false), 2500);
+                
+                setTimeout(() => {
+                    setShowAnimation(false);
+                    scanLocked = false;
+                    setIsScanning(false);
+                }, 3000);
             }
         }, (error) => {
         });
 
         return () => {
-            scanner.clear().catch(err => console.error("Gagal clear scanner", err));
+            scanner.clear().catch(err => console.log("Scanner cleared"));
         };
-    }, []);
+    }, [isAdminAuthenticated]);
 
     const openEditModal = (data) => {
         setSelectedData(data);
@@ -146,7 +182,22 @@ export default function AdminDashboard() {
         setIsEditModalOpen(true);
     };
 
-    // Scanner Unggah Berkas Gambar dengan Pemicu Animasi Pop-up
+    const handleAdminLogin = (e) => {
+        e.preventDefault();
+        if (adminPassword === '24651458') {
+            localStorage.setItem('admin_authenticated', 'true');
+            setIsAdminAuthenticated(true);
+        } else {
+            alert('Password Admin Salah!');
+        }
+    };
+
+    const logoutAdmin = () => {
+        localStorage.removeItem('admin_authenticated');
+        setIsAdminAuthenticated(false);
+        window.location.reload();
+    };
+
     const handleFileScan = async (file) => {
         const element = document.getElementById("reader");
         if (!element) {
@@ -244,13 +295,37 @@ export default function AdminDashboard() {
         }
     };
 
+    if (!isAdminAuthenticated) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+                <div className="max-w-md w-full bg-slate-800 p-8 rounded-2xl shadow-xl border border-slate-700 text-center">
+                    <h2 className="text-2xl font-black text-white mb-2">🔒 SowanQR Admin Gate</h2>
+                    <p className="text-slate-400 text-sm mb-6">Masukkan kata sandi khusus petugas untuk masuk ke panel kontrol.</p>
+                    <form onSubmit={handleAdminLogin} className="space-y-4">
+                        <input
+                            type="password"
+                            required
+                            placeholder="Masukkan Password Admin"
+                            value={adminPassword}
+                            onChange={(e) => setAdminPassword(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-slate-700 border border-slate-600 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition">
+                            Buka Dashboard
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <main className="min-h-screen bg-slate-900 text-white p-6 relative">
             <div className="mb-8 border-b border-slate-800 pb-4">
                 <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">
                     SowanQR Admin Dashboard
                 </h1>
-                <p className="text-slate-400 text-sm mt-1">Sistem Pemantauan & Manajemen Data Tamu Rel-time</p>
+                <p className="text-slate-400 text-sm mt-1">Sistem Pemantauan & Manajemen Data Tamu Real-time</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -287,7 +362,6 @@ export default function AdminDashboard() {
                 <div className="lg:col-span-8">
                     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl overflow-hidden">
 
-                        {/* ================= BUTTON GRUP NAVIGASI BARU (3 TOMBOL TAB) ================= */}
                         <div className="flex bg-slate-900/60 p-1.5 rounded-xl mb-6 border border-slate-700 max-w-xl">
                             <button onClick={() => setActiveTab('kunjungan')}
                                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${activeTab === 'kunjungan' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -303,7 +377,6 @@ export default function AdminDashboard() {
                             </button>
                         </div>
 
-                        {/* ================= SISTEM PENYARINGAN 3 TABEL SEKALIGUS ================= */}
                         <div className="overflow-x-auto">
                             {activeTab === 'kunjungan' && (
                                 <table className="w-full text-left border-collapse">
@@ -346,7 +419,6 @@ export default function AdminDashboard() {
                                 </table>
                             )}
 
-                            {/* TAB 2: KHUSUS TAMU YANG HADIR SAJA (.filter()) */}
                             {activeTab === 'hadir' && (
                                 <table className="w-full text-left border-collapse">
                                     <thead>
@@ -397,7 +469,6 @@ export default function AdminDashboard() {
                                 </table>
                             )}
 
-                            {/* TAB 3: PROFIL MASTER USER */}
                             {activeTab === 'profil' && (
                                 <table className="w-full text-left border-collapse">
                                     <thead>
@@ -442,7 +513,6 @@ export default function AdminDashboard() {
                 </div>
             </div>
 
-            {/* Modal Edit */}
             {isEditModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
                     <div className="bg-slate-800 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl p-6 text-slate-200">
@@ -512,7 +582,6 @@ export default function AdminDashboard() {
                 </div>
             )}
 
-            {/* OVERLAY POP-UP NOTIFIKASI ANIMASI BERHASIL / GAGAL */}
             {showAnimation && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm transition-all duration-300">
                     <div className={`p-8 rounded-3xl bg-slate-900 border text-center shadow-2xl max-w-xs w-full mx-4 transform scale-100 transition-all duration-300 animate-in fade-in zoom-in-95 ${animationType === 'success' ? 'border-emerald-500/30 shadow-emerald-500/10' : 'border-rose-500/30 shadow-rose-500/10'

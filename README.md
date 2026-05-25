@@ -12,7 +12,7 @@
 
 2. **Dashboard Admin:**
    - Pemindaian QR Code tamu secara langsung untuk validasi kedatangan.
-   - Panel pemantauan *real-time* riwayat seluruh kunjungan menggunakan fitur integrasi *Relational JOIN* untuk memetakan NIK ke identitas lengkap profil tamu.
+   - Panel pemantauan *real-time* riwayat seluruh kunjungan menggunakan fitur integrasi *Relationalbb JOIN* untuk memetakan NIK ke identitas lengkap profil tamu.
 
 3. **Sinkronisasi Data Otomatis:**
    - Sistem penyimpanan ganda (*Dual-storage architecture*) yang mengamankan data transaksional di database utama (Supabase) sekaligus mengarsipkannya secara otomatis ke Google Sheets untuk kebutuhan pelaporan administratif.
