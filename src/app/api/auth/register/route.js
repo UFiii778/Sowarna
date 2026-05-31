@@ -110,7 +110,7 @@ export async function POST(req) {
 
       const formData = new URLSearchParams();
       formData.append('target', formattedWhatsapp);
-      formData.append('message', `Halo *${nama}*,\n\nReservasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: *${kodeBooking}*\n\nDengan keperluan untuk: ${keperluan}\nAkan menemui: ${menemui}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerika Kasih! KELOMPOK PJBL BUKU TAMU`);
+      formData.append('message', `Halo *${nama}*,\n\nRegistrasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: *${kodeBooking}*\n\nDengan keperluan untuk: ${keperluan}\nAkan menemui: ${menemui}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerika Kasih! KELOMPOK PJBL BUKU TAMU`);
 
       const waResponse = await fetch('https://api.fonnte.com/send', {
         method: 'POST',

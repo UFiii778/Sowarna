@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin'; 
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 
@@ -11,7 +11,7 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Kode booking tidak valid' }, { status: 400 });
     }
 
-    const { data: kunjungan, error: errKunjungan } = await supabase
+    const { data: kunjungan, error: errKunjungan } = await supabaseAdmin
       .from('kunjungan_tamu')
       .select('*')
       .eq('kode', kodeBooking)
@@ -22,52 +22,36 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Kunjungan tidak ditemukan atau kode salah' }, { status: 404 });
     }
 
-    const { data: profil, error: errProfil } = await supabase
+    // Cari profil tamu berdasarkan NIK kunjungan
+    const { data: profil, error: errProfil } = await supabaseAdmin
       .from('profil_tamu')
       .select('*')
       .eq('nik', kunjungan.nik)
       .single();
 
     if (errProfil || !profil) {
-      console.log("🚨 KONDISI 2 PEMICU 404: Kunjungan ada, tapi NIK ini tidak punya profil!", kunjungan.nik);
-      return NextResponse.json({ success: false, message: 'Profil pemilik QR tidak ditemukan' }, { status: 404 });
+      console.log("🚨 KONDISI 2 PEMICU 404: Profil tidak ditemukan");
+      return NextResponse.json({ success: false, message: 'Profil tamu tidak ditemukan' }, { status: 404 });
     }
 
-    // Buat format jam hadir saat ini (WIB)
+    // Mengeset waktu lokal WIB Indonesia
     const waktuSekarang = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
 
-    // Jika tamu sudah pernah di-scan sebelumnya (status sudah Hadir)
-    if (kunjungan.status === 'Hadir') {
-      // kembalikan datanya, namun beri tahu admin kalau ini sudah pernah absen
-      return NextResponse.json({
-        success: false,
-        message: 'QR Code ini sudah pernah di-scan sebelumnya!',
-        data: {
-          nik: kunjungan.nik,
-          nama: profil.nama,
-          instansi: profil.instansi,
-          whatsapp: profil.whatsapp,
-          keperluan: kunjungan.keperluan,
-          menemui: kunjungan.menemui,
-          waktu_hadir: kunjungan.waktu_hadir
-        }
-      });
-    }
-
-    const { error: updateError } = await supabase
+    // Update status kehadiran di Supabase
+    const { error: errUpdateSupabase } = await supabaseAdmin
       .from('kunjungan_tamu')
       .update({
         status: 'Hadir',
         waktu_hadir: waktuSekarang
       })
-      .eq('id', kunjungan.id);
+      .eq('kode', kodeBooking);
 
-    if (updateError) {
-      throw new Error('Gagal memperbarui status kehadiran di database');
+    if (errUpdateSupabase) {
+      throw new Error('Gagal memperbarui status di Supabase: ' + errUpdateSupabase.message);
     }
 
     try {
-      let email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
       let key = process.env.GOOGLE_PRIVATE_KEY;
 
       if (email && key && process.env.GOOGLE_SHEET_ID) {
@@ -84,16 +68,19 @@ export async function POST(req) {
 
         const rowToUpdate = rows.find(r => r.get('Kode') === kodeBooking);
         if (rowToUpdate) {
+          rowToUpdate.set('nama', profil?.nama || '-');
+          rowToUpdate.set('instansi', profil?.instansi || '-');
+          rowToUpdate.set('whatsapp', profil?.whatsapp || '-');
+          
           rowToUpdate.set('Status', 'Hadir');
           rowToUpdate.set('Waktu Hadir', waktuSekarang);
           await rowToUpdate.save();
         }
       }
     } catch (sheetErr) {
-      console.error('Gagal memperbarui Google Sheets (tapi Supabase aman):', sheetErr.message);
+      console.error('Gagal memperbarui Google Sheets (tetapi Supabase aman):', sheetErr.message);
     }
 
-    // Kembalikan paket data gabungan yang sukses untuk ditampilkan admin
     return NextResponse.json({
       success: true,
       message: 'Kehadiran berhasil dicatat',
@@ -104,12 +91,13 @@ export async function POST(req) {
         whatsapp: profil.whatsapp,
         keperluan: kunjungan.keperluan,
         menemui: kunjungan.menemui,
-        waktu_hadir: waktuSekarang
+        waktu_hadir: waktuSekarang,
+        status: 'Hadir'
       }
     });
 
-  } catch (error) {
-    console.error('Error API Scan:', error.message);
-    return NextResponse.json({ success: false, message: 'Terjadi kesalahan internal server' }, { status: 500 });
+  } catch (err) {
+    console.error("🚨 SERVER ERROR AT API/SCAN:", err.message);
+    return NextResponse.json({ success: false, message: 'Terjadi kesalahan internal server: ' + err.message }, { status: 500 });
   }
 }

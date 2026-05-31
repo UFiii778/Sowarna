@@ -1,8 +1,20 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'SowanrnaQR - Buku Tamu Digital',
-  description: 'Aplikasi Buku Tamu Berbasis QR Code',
+  title: 'SowanQR - Sistem Kunjungan Tamu',
+  description: 'Sistem Pemantauan & Manajemen Data Tamu Real-time',
+  icons: {
+    icon: [
+      {
+        url: '/favicon-light.png',
+        media: '(prefers-color-scheme: light)',
+      },
+      {
+        url: '/favicon-dark.png',
+        media: '(prefers-color-scheme: dark)',
+      },
+    ],
+  },
 };
 
 export default function RootLayout({ children }) {

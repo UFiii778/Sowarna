@@ -15,10 +15,9 @@ export default function ScanPage() {
     scanner.render(onScanSuccess, onScanFailure);
 
     async function onScanSuccess(resultText) {
-      scanner.clear(); // Hentikan scan sementara proses validasi
+      scanner.clear();
       setScanResult(resultText);
 
-      // Kirim hasil scan ke API backend
       try {
         const res = await fetch('/api/scan', {
           method: 'POST',
@@ -33,7 +32,6 @@ export default function ScanPage() {
     }
 
     function onScanFailure(err) {
-      // Abaikan error nyari QR berulang-ulang di frame kamera
     }
       
 

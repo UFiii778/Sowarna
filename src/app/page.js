@@ -170,7 +170,7 @@ export default function Home() {
           <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600 tracking-tight mb-2">
             SowanQR
           </h1>
-          <h2 className="text-sm font-medium text-slate-50 dark:text-slate-400">{t.subtitle}</h2>
+          <h2 className="text-sm font-medium text-slate-700 dark:text-white">{t.subtitle}</h2>
         </div>
 
         {!result ? (
@@ -196,12 +196,12 @@ export default function Home() {
             <div className="flex bg-slate-100/80 dark:bg-slate-800 p-1 rounded-xl mb-6 border border-slate-200 dark:border-slate-700">
               <button type="button"
                 onClick={() => { setAuthMode('register'); setIsVerified(false); }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'register' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}>
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'register' ? 'bg-indigo-600 shadow text-white' : 'text-slate-800 hover:text-indigo-300 dark:text-slate-40 dark:hover:text-indigo-600 bg-white shadow'}`}>
                 {t.tabNew}
               </button>
               <button type="button"
                 onClick={() => { setAuthMode('login'); setIsVerified(false); }}
-                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'login' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'}`}>
+                className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'login' ? 'bg-indigo-600 shadow text-white' : 'text-slate-800 hover:text-indigo-300 dark:text-slate-40 dark:hover:text-indigo-600 bg-white shadow'}`}>
                 Login
               </button>
             </div>
@@ -297,7 +297,7 @@ export default function Home() {
                   </div>
 
                   <button type="submit" disabled={loading}
-                    className="w-full mt-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-indigo-100 disabled:opacity-70 transition-all">
+                    className="w-full mt-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all">
                     {loading ? t.btnSubmitting : t.btnSubmit}
                   </button>
                 </>
