@@ -1,7 +1,23 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
+// Fungsi validasi token keamanan admin agar tidak bisa ditembak sembarangan
+function passwordAdminValid(request) {
+  const tokenUtama = request.headers.get('authorization');
+  const tokenAlternatif = request.headers.get('Authorization');
+  
+  const tokenFinal = tokenUtama || tokenAlternatif;
+  
+  if (!tokenFinal) return false;
+  return tokenFinal.trim() === 'Bearer 24651458';
+}
+
 export async function POST(req) {
+  // 1. PROTEKSI KEAMANAN: Cek apakah request datang dari admin resmi
+  if (!passwordAdminValid(req)) {
+    return NextResponse.json({ success: false, message: 'Akses ditolak. Token admin tidak valid.' }, { status: 401 });
+  }
+
   try {
     const { kode } = await req.json();
 
@@ -9,8 +25,6 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Kode QR tidak valid atau kosong' }, { status: 400 });
     }
 
-    // 1. Cari data kunjungan berdasarkan kode QR yang di-scan
-    // Kita lakukan join ke 'profil_tamu' untuk mengambil nama tamu agar responnya interaktif
     const { data: kunjungan, error: fetchError } = await supabaseAdmin
       .from('kunjungan_tamu')
       .select(`
@@ -22,7 +36,7 @@ export async function POST(req) {
 
     if (fetchError) {
       console.error("Database Fetch Error:", fetchError.message);
-      return NextResponse.json({ success: false, message: 'Gagal membaca data dari server' }, { status: 500 });
+      return NextResponse.json({ success: false, message: 'Gagal membaca data dari server database' }, { status: 500 });
     }
 
     // Jika kode QR tidak ada di database sama sekali
@@ -31,19 +45,19 @@ export async function POST(req) {
     }
 
     const namaTamu = kunjungan.profil_tamu?.nama || 'Tamu';
-    const waktuSekarang = new Date().toISOString();
+    
+    // Format waktu lokal Indonesia (WIB) untuk pencatatan real-time jam hadir
+    const jamSekarang = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+    const waktuISO = new Date().toISOString();
 
-    // =========================================================================
-    // ALUR LOGIKA UTAMA: 1 QR DUA FUNGSI (CHECK-IN / CHECK-OUT / EXPIRED)
-    // =========================================================================
-
-    // KONDISI A: Tamu baru datang (jam_masuk masih kosong) -> PROSES CHECK-IN
+    // KONDISI A: Tamu belum pernah melakukan check-in (jam_masuk masih kosong) -> PROSES CHECK-IN
     if (!kunjungan.jam_masuk) {
       const { error: updateInError } = await supabaseAdmin
         .from('kunjungan_tamu')
         .update({
-          jam_masuk: waktuSekarang,
-          status: 'Hadir' // Mengubah status menjadi Hadir / Masuk
+          jam_masuk: waktuISO,
+          waktu_hadir: jamSekarang, // Sinkronisasi teks tampilan riwayat tabel
+          status: 'Hadir'
         })
         .eq('kode', kode.trim());
 
@@ -52,9 +66,9 @@ export async function POST(req) {
       return NextResponse.json({
         success: true,
         type: 'check-in',
-        message: `Selamat datang, ${namaTamu}! Check-in berhasil tercatat.`,
+        message: `Selamat datang, ${namaTamu}. Check-in berhasil dicatat!`,
         nama: namaTamu,
-        jam: new Date(waktuSekarang).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        jam: jamSekarang
       });
     }
 
@@ -63,8 +77,8 @@ export async function POST(req) {
       const { error: updateOutError } = await supabaseAdmin
         .from('kunjungan_tamu')
         .update({
-          jam_keluar: waktuSekarang,
-          status: 'Selesai' // Mengubah status menjadi Selesai / Keluar
+          jam_keluar: waktuISO,
+          status: 'Selesai'
         })
         .eq('kode', kode.trim());
 
@@ -73,23 +87,22 @@ export async function POST(req) {
       return NextResponse.json({
         success: true,
         type: 'check-out',
-        message: `Terima kasih atas kunjungannya, ${namaTamu}. Check-out berhasil tercatat!`,
+        message: `Terima kasih atas kunjungannya, ${namaTamu}. Check-out berhasil dicatat!`,
         nama: namaTamu,
-        jam: new Date(waktuSekarang).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+        jam: jamSekarang
       });
     }
 
-    // KONDISI C: Tamu sudah check-in dan sudah check-out -> PROTEKSI QR EXPIRED
     if (kunjungan.jam_masuk && kunjungan.jam_keluar) {
       return NextResponse.json({
         success: false,
         type: 'expired',
-        message: `QR Code milik ${namaTamu} sudah kedaluwarsa (Tamu sudah melakukan Check-out sebelumnya).`
+        message: `QR Code milik ${namaTamu} sudah kadaluwarsa karena sudah digunakan untuk Check-in & Check-out.`
       }, { status: 400 });
     }
 
-  } catch (error) {
-    console.error("🔴 ERROR AT SCANNER BACKEND:", error.message);
-    return NextResponse.json({ success: false, message: 'Internal Server Error: ' + error.message }, { status: 500 });
+  } catch (err) {
+    console.error("🚨 Gagal melakukan POST Scan:", err.message);
+    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
 }

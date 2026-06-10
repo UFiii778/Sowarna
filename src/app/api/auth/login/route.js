@@ -1,70 +1,62 @@
 import { NextResponse } from 'next/server';
-import { GoogleSpreadsheet } from 'google-spreadsheet';
-import { JWT } from 'google-auth-library';
-import QRCode from 'qrcode';
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 export async function POST(req) {
   try {
-    const { nama, nik, whatsapp, keperluan, menemui, isVerifying } = await req.json();
+    const { whatsapp, email } = await req.json();
 
-    // LANGKAH A: Cek apakah data profil tamu terdaftar (Dipakai saat user ketik NIK di form login)
-    if (isVerifying) {
-      const { data: profil, error } = await supabase
-        .from('profil_tamu')
-        .select('*')
-        .eq('nik', nik)
-        .eq('whatsapp', whatsapp)
-        .single();
-
-      if (error || !profil) {
-        return NextResponse.json({ success: false, message: 'Data tidak ditemukan. Silakan Register terlebih dahulu.' });
-      }
-      return NextResponse.json({ success: true, profil });
+    if (!whatsapp || !email) {
+      return NextResponse.json({
+        success: false,
+        message: 'Email dan Nomor WhatsApp wajib diisi'
+      }, { status: 400 });
     }
 
-    // LANGKAH B: Jika profil terverifikasi, langsung buatkan baris kunjungan baru
-    const kodeBooking = `SQ-${Date.now()}`;
+    // 1. Buat dua variasi format WhatsApp (08... dan 62...) untuk dicocokkan ke Database
+    let nomorWA = whatsapp.trim();
+    if (nomorWA.startsWith('+')) nomorWA = nomorWA.replace('+', '');
 
-    const { data: profil } = await supabase.from('profil_tamu').select('*').eq('nik', nik).single();
+    let nomorWA62 = nomorWA;
+    let nomorWA0 = nomorWA;
 
-    const { error: kunjunganError } = await supabase
-      .from('kunjungan_tamu')
-      .insert([{
-        nama, nik, keperluan, menemui,
-        kode: kodeBooking,
-        status: 'Pending',
-        waktu_hadir: '-'
-      }]);
+    if (nomorWA.startsWith('0')) {
+      nomorWA62 = '62' + nomorWA.slice(1);
+    } else if (nomorWA.startsWith('62')) {
+      nomorWA0 = '0' + nomorWA.slice(2);
+    }
 
-    if (kunjunganError) throw kunjunganError;
+    const targetEmail = email.trim().toLowerCase();
 
-    const auth = new JWT({
-      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    // 2. Cek ke database menggunakan klausa .or() agar mendeteksi kedua format nomor
+    const { data: user, error: userError } = await supabaseAdmin
+      .from('profil_tamu')
+      .select('*')
+      .eq('email', targetEmail)
+      .or(`whatsapp.eq.${nomorWA62},whatsapp.eq.${nomorWA0}`)
+      .maybeSingle();
+
+    if (userError) {
+      console.error("Supabase Login Error:", userError.message);
+      return NextResponse.json({ success: false, message: 'Terjadi kesalahan sistem database' }, { status: 500 });
+    }
+
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        message: 'Kombinasi Email dan Nomor WhatsApp tidak ditemukan. Silakan periksa kembali data Anda atau daftar baru.'
+      }, { status: 404 });
+    }
+
+    // Jika sukses, kembalikan data user beserta nomor whatsapp asli yang terdaftar di DB
+    return NextResponse.json({
+      success: true,
+      message: 'Data terverifikasi, silakan lanjutkan ke verifikasi OTP.',
+      nik: user.nik,       // Menyediakan nik di root level
+      profil: user         // Menyediakan object profil untuk kecocokan kode frontend lama
     });
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-
-    await sheet.addRow({
-      NIK: nik,
-      Nama: profil.nama,
-      WhatsApp: profil.whatsapp,
-      Email: profil.email,
-      Keperluan: keperluan,
-      Menemui: menemui,
-      Kode: kodeBooking,
-      Status: 'Pending',
-      'Tanda Tangan': profil.tanda_tangan
-    });
-
-    const qrCodeDataUrl = await QRCode.toDataURL(kodeBooking);
-    return NextResponse.json({ success: true, qr: qrCodeDataUrl, code: kodeBooking });
 
   } catch (error) {
-    console.error('Login Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error("Login Route Error:", error);
+    return NextResponse.json({ success: false, message: 'Terjadi kesalahan server internal' }, { status: 500 });
   }
 }

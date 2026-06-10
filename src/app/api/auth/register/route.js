@@ -6,14 +6,34 @@ import { supabase } from '@/lib/supabase';
 
 export async function POST(req) {
   try {
-    const { nama, instansi, whatsapp, nik, email, keperluan, menemui, tandaTanganBase64 } = await req.json();
-    const kodeBooking = `SQ-${Date.now()}`;
+    const body = await req.json();
+    // Ambil properti 'ttd' yang dikirim dari page.js ke dalam variabel tandaTanganBase64
+    const { nama, instansi, whatsapp, nik, email, keperluan, menemui, ttd: tandaTanganBase64 } = body;
 
+    // 1. VALIDASI INPUT (KEAMANAN & INTEGRITAS DATA)
+    if (!nik || nik.trim().length < 16 || isNaN(nik)) {
+      return NextResponse.json({ success: false, error: 'NIK tidak valid. Harus berupa 16 digit angka.' }, { status: 400 });
+    }
+    if (!nama || !nama.trim()) {
+      return NextResponse.json({ success: false, error: 'Nama wajib diisi.' }, { status: 400 });
+    }
+    if (!whatsapp || !whatsapp.trim()) {
+      return NextResponse.json({ success: false, error: 'Nomor WhatsApp wajib diisi.' }, { status: 400 });
+    }
+    if (!tandaTanganBase64) {
+      return NextResponse.json({ success: false, error: 'Tanda tangan wajib diunggah.' }, { status: 400 });
+    }
+
+    // 2. GENERATE KODE BOOKING UNIK
+    const randomString = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const kodeBooking = `SQ-${Date.now()}-${randomString}`;
+
+    // 3. UPLOAD TANDA TANGAN KE SUPABASE STORAGE
     const buffer = Buffer.from(tandaTanganBase64.replace(/^data:image\/\w+;base64,/, ""), 'base64');
-    const fileName = `ttd-${nik}-${Date.now()}.png`;
+    const fileName = `ttd-${nik}-${kodeBooking}.png`;
 
     const { data: storageData, error: storageError } = await supabase.storage
-      .from('tanda_tangan') 
+      .from('tanda_tangan')
       .upload(fileName, buffer, { contentType: 'image/png' });
 
     if (storageError) {
@@ -23,15 +43,17 @@ export async function POST(req) {
 
     const { data: { publicUrl } } = supabase.storage.from('tanda_tangan').getPublicUrl(fileName);
 
+    // 4. SIMPAN KE TABEL PROFIL_TAMU (UPSERT)
+    // Ditambahkan logika fallback "|| '-'" jika isinya string kosong dari formulir
     const { error: profilError } = await supabase
       .from('profil_tamu')
-      .upsert([{ 
-        nik, 
-        nama, 
-        instansi, 
-        whatsapp, 
-        email, 
-        tanda_tangan: publicUrl 
+      .upsert([{
+        nik: nik.trim(),
+        nama: nama.trim(),
+        instansi: (instansi && instansi.trim()) ? instansi.trim() : '-',
+        whatsapp: whatsapp.trim(),
+        email: (email && email.trim()) ? email.trim().toLowerCase() : '-',
+        tanda_tangan: publicUrl
       }], { onConflict: 'nik' });
 
     if (profilError) {
@@ -39,13 +61,13 @@ export async function POST(req) {
       throw profilError;
     }
 
-    // INSERT KE TABEL public.kunjungan_tamu
+    // 5. INSERT KE TABEL KUNJUNGAN_TAMU
     const { error: kunjunganError } = await supabase
       .from('kunjungan_tamu')
       .insert([{
-        nik, 
-        keperluan, 
-        menemui,
+        nik: nik.trim(),
+        keperluan: keperluan || '-',
+        menemui: menemui || '-',
         kode: kodeBooking,
         status: 'Pending',
         waktu_hadir: '-'
@@ -56,61 +78,71 @@ export async function POST(req) {
       throw kunjunganError;
     }
 
-    // SIMPAN KE GOOGLE SHEETS
-    let googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-    let googleKey = process.env.GOOGLE_PRIVATE_KEY;
+    let sheetsSaved = false;
+    let waSent = false;
 
-    if (!googleEmail || !googleKey) {
-      try {
-        const fs = require('fs');
-        const path = require('path');
-        const secrets = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'secrets.json'), 'utf8'));
-        googleEmail = googleEmail || secrets.client_email;
-        googleKey = googleKey || secrets.private_key;
-      } catch (e) {
-        console.warn("Relying on environment variables for Google Sheets.");
+    // 6. SIMPAN KE GOOGLE SHEETS
+    try {
+      let googleEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      let googleKey = process.env.GOOGLE_PRIVATE_KEY;
+
+      if (!googleEmail || !googleKey) {
+        try {
+          const fs = require('fs');
+          const path = require('path');
+          const secrets = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'secrets.json'), 'utf8'));
+          googleEmail = googleEmail || secrets.client_email;
+          googleKey = googleKey || secrets.private_key;
+        } catch (e) {
+          console.warn("Menggunakan Environment Variables untuk Google Sheets.");
+        }
       }
+
+      if (googleEmail && googleKey && process.env.GOOGLE_SHEET_ID) {
+        const auth = new JWT({
+          email: googleEmail,
+          key: googleKey.replace(/\\n/g, '\n'),
+          scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+        });
+
+        const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
+        await doc.loadInfo();
+        const sheet = doc.sheetsByIndex[0];
+
+        await sheet.addRow({
+          NIK: nik,
+          Nama: nama,
+          Instansi: (instansi && instansi.trim()) ? instansi.trim() : '-',
+          WhatsApp: whatsapp,
+          Email: (email && email.trim()) ? email.trim().toLowerCase() : '-',
+          Keperluan: keperluan || '-',
+          Menemui: menemui || '-',
+          Kode: kodeBooking,
+          Status: 'Pending',
+          'Tanda Tangan': publicUrl,
+          'Waktu Hadir': '-'
+        });
+        sheetsSaved = true;
+      }
+    } catch (sheetError) {
+      console.error('Gagal menyimpan ke Google Sheets:', sheetError.message);
     }
 
-    const auth = new JWT({
-      email: googleEmail,
-      key: googleKey.replace(/\\n/g, '\n'),
-      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-    });
-
-    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
-    await doc.loadInfo();
-    const sheet = doc.sheetsByIndex[0];
-
-    await sheet.addRow({
-      NIK: nik,
-      Nama: nama,
-      Instansi: instansi,
-      WhatsApp: whatsapp,
-      Email: email,
-      Keperluan: keperluan,
-      Menemui: menemui,
-      Kode: kodeBooking,
-      Status: 'Pending',
-      'Tanda Tangan': publicUrl,
-      'Waktu Hadir': '-'
-    });
-
-    // GENERATE QR CODE
+    // 7. GENERATE QR CODE
     const qrCodeDataUrl = await QRCode.toDataURL(kodeBooking);
 
-    // KIRIM WHATSAPP VIA FONNTE
+    // 8. KIRIM WHATSAPP VIA FONNTE
     try {
       let formattedWhatsapp = whatsapp.trim();
       if (formattedWhatsapp.startsWith('0')) {
         formattedWhatsapp = '62' + formattedWhatsapp.slice(1);
       } else if (formattedWhatsapp.startsWith('+')) {
-        formattedWhatsapp = formattedWhatsapp.replace('+', '');
+        formattedWhatsapp = formattedWhatsapp.replace('!', '');
       }
 
       const formData = new URLSearchParams();
       formData.append('target', formattedWhatsapp);
-      formData.append('message', `Halo *${nama}*,\n\nRegistrasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: *${kodeBooking}*\n\nDengan keperluan untuk: ${keperluan}\nAkan menemui: ${menemui}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerika Kasih! KELOMPOK PJBL BUKU TAMU`);
+      formData.append('message', `Halo *${nama}*,\n\nRegistrasi kamu di SowanQR berhasil! 🎉\n\nKode Booking: *${kodeBooking}*\n\nDengan keperluan untuk: ${keperluan || '-'}\nAkan menemui: ${menemui || '-'}\n\nSilakan tunjukkan QR Code yang muncul di website saat tiba di gerbang.\n\nTerima Kasih!`);
 
       const waResponse = await fetch('https://api.fonnte.com/send', {
         method: 'POST',
@@ -121,17 +153,27 @@ export async function POST(req) {
       });
 
       const waResult = await waResponse.json();
+      if (waResult.status === true) {
+        waSent = true;
+      }
       console.log('Respons dari Fonnte:', waResult);
 
     } catch (waError) {
-      console.error('Gagal mengirim WA (tapi data database & sheet aman):', waError.message);
+      console.error('Gagal mengirim WhatsApp:', waError.message);
     }
 
-    // Kembalikan respons sukses ke frontend
-    return NextResponse.json({ success: true, qr: qrCodeDataUrl, code: kodeBooking });
+    return NextResponse.json({
+      success: true,
+      qr: qrCodeDataUrl,
+      code: kodeBooking,
+      meta: {
+        sheetsSaved,
+        waSent
+      }
+    });
 
   } catch (error) {
-    console.error('Error pada API Register:', error.message);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('Error detail register:', error);
+    return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }

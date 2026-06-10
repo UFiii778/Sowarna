@@ -11,6 +11,8 @@ export default function AdminDashboard() {
     const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
     const [adminPassword, setAdminPassword] = useState('');
 
+    const [mounted, setMounted] = useState(false);
+
     const [historyKunjungan, setHistoryKunjungan] = useState([]);
     const [historyProfil, setHistoryProfil] = useState([]);
     const [scanResult, setScanResult] = useState(null);
@@ -48,7 +50,8 @@ export default function AdminDashboard() {
                 profil_tamu (
                     nama,
                     instansi,
-                    whatsapp
+                    whatsapp,
+                    email
                 )
             `)
             .order('id', { ascending: false });
@@ -60,7 +63,8 @@ export default function AdminDashboard() {
                 ...item,
                 nama: item.profil_tamu?.nama || '-',
                 instansi: item.profil_tamu?.instansi || '-',
-                whatsapp: item.profil_tamu?.whatsapp || '-'
+                whatsapp: item.profil_tamu?.whatsapp || '-',
+                email: item.profil_tamu?.email || '-'
             }));
             setHistoryKunjungan(formattedData);
         }
@@ -93,36 +97,47 @@ export default function AdminDashboard() {
 
     const handleScanSuccess = async (decodedText) => {
         try {
-            const response = await fetch('/api/scan', {
+            const response = await fetch('/api/admin/scan', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ kodeBooking: decodedText.trim() })
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer 24651458'
+                },
+                body: JSON.stringify({ kode: decodedText }) 
             });
 
-            const resData = await response.json();
+            const result = await response.json();
 
-            if (resData.success) {
-                const audio = new Audio('/beep-06.wav');
-                audio.volume = 0.6;
-                audio.play().catch(err => console.log("Autoplay diblokir browser:", err));
+            if (result.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: result.type === 'check-in' ? 'Check-in Berhasil' : 'Check-out Berhasil',
+                    text: result.message,
+                    background: '#1e293b',
+                    color: '#f8fafc'
+                });
 
-                setScanResult(resData.data);
-                setAnimationType('success');
-                setShowAnimation(true);
-                refreshAllData();
+                if (typeof fetchKunjunganData === 'function') fetchKunjunganData();
+
             } else {
-                const audio = new Audio('/gagal.wav');
-                audio.volume = 0.6;
-                audio.play().catch(err => console.log("Autoplay diblokir browser:", err));
-
-                setErrorMsg(resData.message);
-                setAnimationType('error');
-                setShowAnimation(true);
+                
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Gagal Scan',
+                    text: result.message,
+                    background: '#1e293b',
+                    color: '#f8fafc'
+                });
             }
-        } catch (err) {
-            setErrorMsg('Gagal menghubungi server');
-            setAnimationType('error');
-            setShowAnimation(true);
+        } catch (error) {
+            console.error("Terjadi kesalahan client-side scan:", error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Kesalahan Sistem',
+                text: 'Gagal terhubung ke server API.',
+                background: '#1e293b',
+                color: '#f8fafc'
+            });
         }
     };
 
@@ -204,7 +219,6 @@ export default function AdminDashboard() {
 
             const res = await response.json();
             if (res.success) {
-                // ✨ GANTI TAMPILAN ALERT EDIT BERHASIL
                 ToastAdmin.fire({
                     title: 'Berhasil!',
                     text: 'Perubahan data berhasil disimpan.',
@@ -276,9 +290,17 @@ export default function AdminDashboard() {
         });
     };
 
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    if (!mounted) {
+        return <div className="min-h-screen bg-slate-950"></div>;
+    }
+
     if (!isAdminAuthenticated) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+            <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4" suppressHydrationWarning>
                 <div className="max-w-md w-full bg-slate-800 rounded-2xl p-8 border border-slate-700 shadow-xl">
                     <h2 className="text-2xl font-black text-white mb-2 tracking-wide">Panel Petugas SowanQR</h2>
                     <p className="text-slate-400 text-sm mb-6">Masukkan kata sandi khusus petugas untuk masuk ke panel kontrol.</p>
@@ -349,7 +371,6 @@ export default function AdminDashboard() {
 
                 {activeTab === 'scan' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Kiri: Scanner Kamera */}
                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[350px]">
                             <div>
                                 <h3 className="text-md font-bold text-white mb-1">Metode 1: Scan Lewat Kamera</h3>
@@ -380,7 +401,6 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
-                        {/* Kanan: Unggah File Gambar */}
                         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between min-h-[350px]">
                             <div>
                                 <h3 className="text-md font-bold text-white mb-1">Metode 2: Upload File QR Code</h3>
@@ -421,13 +441,14 @@ export default function AdminDashboard() {
                                         <th className="px-6 py-4">Menemui</th>
                                         <th className="px-6 py-4">Keperluan</th>
                                         <th className="px-6 py-4">Status</th>
-                                        <th className="px-6 py-4">Waktu Hadir</th>
+                                        <th className="px-6 py-4">Jam Masuk</th>
+                                        <th className="px-6 py-4">Jam Keluar</th>
                                         <th className="px-6 py-4 text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/60">
                                     {historyKunjungan.length === 0 ? (
-                                        <tr><td colSpan="8" className="px-6 py-12 text-center text-sm text-slate-500 font-medium">Belum ada riwayat data kunjungan.</td></tr>
+                                        <tr><td colSpan="9" className="px-6 py-12 text-center text-sm text-slate-500 font-medium">Belum ada riwayat data kunjungan.</td></tr>
                                     ) : (
                                         historyKunjungan.map((item) => (
                                             <tr key={item.id} className="hover:bg-slate-850/30 transition-all">
@@ -437,11 +458,17 @@ export default function AdminDashboard() {
                                                 <td className="px-6 py-4 text-sm text-slate-300 font-medium">{item.menemui}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-400">{item.keperluan}</td>
                                                 <td className="px-6 py-4 text-sm">
-                                                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase ${item.status === 'Hadir' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                                                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold tracking-wide uppercase ${item.status === 'Hadir' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : item.status === 'Selesai' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
                                                         {item.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-sm text-slate-400 font-medium">{item.waktu_hadir || '-'}</td>
+                                                {/* Kolom tampilan Jam Masuk & Jam Keluar yang Baru */}
+                                                <td className="px-6 py-4 text-xs text-slate-300 font-mono font-medium">
+                                                    {item.jam_masuk ? new Date(item.jam_masuk).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'}
+                                                </td>
+                                                <td className="px-6 py-4 text-xs text-slate-400 font-mono font-medium">
+                                                    {item.jam_keluar ? new Date(item.jam_keluar).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB' : '-'}
+                                                </td>
                                                 <td className="px-6 py-4 text-sm text-center space-x-2 whitespace-nowrap">
                                                     <button onClick={() => openEditModal(item, 'kunjungan_tamu')} className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg text-indigo-400 font-bold transition-all">Edit</button>
                                                     <button onClick={() => handleDelete(item.id, 'kunjungan_tamu')} className="text-xs bg-slate-800 hover:bg-rose-950/40 px-3 py-1.5 rounded-lg text-rose-400 font-bold transition-all">Hapus</button>
@@ -464,6 +491,7 @@ export default function AdminDashboard() {
                                     <tr className="bg-slate-850/50 border-b border-slate-800 text-xs font-bold tracking-wider text-slate-400 uppercase">
                                         <th className="px-6 py-4">NIK</th>
                                         <th className="px-6 py-4">Nama Lengkap</th>
+                                        <th className="px-6 py-4">Alamat Email</th>
                                         <th className="px-6 py-4">Instansi</th>
                                         <th className="px-6 py-4">WhatsApp</th>
                                         <th className="px-6 py-4 text-center">Aksi</th>
@@ -471,12 +499,13 @@ export default function AdminDashboard() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/60">
                                     {historyProfil.length === 0 ? (
-                                        <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-slate-500 font-medium">Belum ada profil terdaftar.</td></tr>
+                                        <tr><td colSpan="6" className="px-6 py-12 text-center text-sm text-slate-500 font-medium">Belum ada profil terdaftar.</td></tr>
                                     ) : (
                                         historyProfil.map((item) => (
                                             <tr key={item.id} className="hover:bg-slate-850/30 transition-all">
                                                 <td className="px-6 py-4 text-sm text-slate-400 font-mono tracking-wide">{item.nik}</td>
                                                 <td className="px-6 py-4 text-sm font-bold text-white">{item.nama}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-300 font-medium">{item.email || '-'}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-300">{item.instansi}</td>
                                                 <td className="px-6 py-4 text-sm text-slate-300 font-medium">{item.whatsapp}</td>
                                                 <td className="px-6 py-4 text-sm text-center space-x-2 whitespace-nowrap">
@@ -493,7 +522,7 @@ export default function AdminDashboard() {
                 )}
             </main>
 
-            {/* 🎥 MODAL ANIMASI SCAN BERHASIL / GAGAL */}
+            {/* MODAL ANIMASI SCAN BERHASIL / GAGAL */}
             {showAnimation && (
                 <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className={`p-6 rounded-3xl bg-slate-900 border text-center shadow-2xl max-w-xs w-full mx-4 transform scale-100 transition-all duration-300 ${animationType === 'success' ? 'border-emerald-500/30 shadow-emerald-500/10' : 'border-rose-500/30 shadow-rose-500/10'}`}>
@@ -504,13 +533,13 @@ export default function AdminDashboard() {
                             {animationType === 'success' ? 'SCAN BERHASIL!' : 'SCAN GAGAL!'}
                         </h3>
                         <p className="text-xs text-slate-400 mt-2 font-medium leading-relaxed">
-                            {animationType === 'success' ? 'Kehadiran tamu telah berhasil tercatat otomatis ke dalam sistem.' : errorMsg || 'Terjadi kesalahan, kode QR tidak dikenali.'}
+                            {animationType === 'success' ? 'Status log absensi tamu telah berhasil dimutasi otomatis oleh sistem.' : errorMsg || 'Terjadi kesalahan, kode QR tidak dikenali.'}
                         </p>
                         {animationType === 'success' && scanResult && (
                             <div className="mt-4 p-3 bg-slate-950 rounded-xl border border-slate-800 text-left space-y-1.5">
-                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Detail Kedatangan:</p>
+                                <p className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Detail Log Aktif:</p>
                                 <p className="text-xs text-white font-black"><span className="text-slate-400 font-normal">Nama:</span> {scanResult.nama}</p>
-                                <p className="text-xs text-slate-300 font-medium"><span className="text-slate-400 font-normal">Tujuan:</span> {scanResult.menemui}</p>
+                                <p className="text-xs text-slate-300 font-medium"><span className="text-slate-400 font-normal">Keterangan:</span> {scanResult.menemui}</p>
                                 <p className="text-[11px] text-indigo-400 font-mono text-right mt-1">{scanResult.waktu_hadir}</p>
                             </div>
                         )}
@@ -521,6 +550,7 @@ export default function AdminDashboard() {
                 </div>
             )}
 
+            {/* MODAL EDIT DATA (MENDUKUNG EDIT EMAIL TAMU) */}
             {isEditModalOpen && (
                 <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
                     <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
@@ -541,6 +571,7 @@ export default function AdminDashboard() {
                                         <select value={editForm.status || 'Pending'} onChange={(e) => setEditForm({ ...editForm, status: e.target.value })} className="w-full p-2.5 text-sm bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-indigo-500">
                                             <option value="Pending">Pending</option>
                                             <option value="Hadir">Hadir</option>
+                                            <option value="Selesai">Selesai (Pulang)</option>
                                         </select>
                                     </div>
                                 </>
@@ -549,6 +580,10 @@ export default function AdminDashboard() {
                                     <div>
                                         <label className="text-xs font-bold text-slate-400 block mb-1">Nama Lengkap Tamu</label>
                                         <input type="text" value={editForm.nama || ''} onChange={(e) => setEditForm({ ...editForm, nama: e.target.value })} className="w-full p-2.5 text-sm bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-indigo-500" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-400 block mb-1">Alamat Email</label>
+                                        <input type="email" value={editForm.email || ''} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className="w-full p-2.5 text-sm bg-slate-800 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-indigo-500" placeholder="contoh@tamu.com" />
                                     </div>
                                     <div>
                                         <label className="text-xs font-bold text-slate-400 block mb-1">Instansi / Perusahaan</label>

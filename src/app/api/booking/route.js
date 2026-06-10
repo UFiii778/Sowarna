@@ -60,18 +60,54 @@ export async function POST(req) {
 
         const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, auth);
         await doc.loadInfo();
-        const sheet = doc.sheetsByIndex[0];
-        const rows = await sheet.getRows();
-
-        const rowToUpdate = rows.find(r => r.get('Kode') === kodeBooking);
-        if (rowToUpdate) {
-          rowToUpdate.set('Status', 'Hadir');
-          rowToUpdate.set('Waktu Hadir', waktuSekarang);
-          await rowToUpdate.save();
+        
+        const sheet = doc.sheetsByTitle['Riwayat_Kunjungan']; 
+        
+        if (sheet) {
+          const rows = await sheet.getRows();
+          const rowToUpdate = rows.find(r => r.get('Kode') === kodeBooking);
+          
+          if (rowToUpdate) {
+            rowToUpdate.set('Status', 'Hadir');
+            rowToUpdate.set('Waktu Hadir', waktuSekarang);
+            await rowToUpdate.save();
+          } else {
+            await sheet.addRow({
+              'Kode': kodeBooking,
+              'NIK': kunjungan.nik,
+              'Nama': profil.nama,
+              'WhatsApp': profil.whatsapp,
+              'Keperluan': kunjungan.keperluan,
+              'Menemui': kunjungan.menemui,
+              'Status': 'Hadir',
+              'Waktu Hadir': waktuSekarang,
+              'Tanggal': new Date(kunjungan.created_at).toLocaleDateString('id-ID'),
+              'Tanda Tangan': profil.tanda_tangan_url
+            });
+          }
         }
       }
     } catch (sheetErr) {
       console.error('Gagal memperbarui Google Sheets (tapi Supabase aman):', sheetErr.message);
+    }
+
+    try {
+      if (process.env.FOONTE_TOKEN) {
+        const pesanWA = `Halo ${profil.nama},\n\nKehadiran Anda berhasil dicatat oleh sistem SowanQR!\n\nKode: ${kodeBooking}\nMenemui: ${kunjungan.menemui}\nWaktu Hadir: ${waktuSekarang}\nStatus: Hadir\n\nTerima kasih telah melakukan pemindaian QR Code.`;
+
+        await fetch('https://api.foonte.com/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': process.env.FOONTE_TOKEN
+          },
+          body: new URLSearchParams({
+            'target': profil.whatsapp,
+            'message': pesanWA
+          })
+        });
+      }
+    } catch (foonteErr) {
+      console.error('Gagal mengirim WhatsApp via Foonte:', foonteErr.message);
     }
 
     return NextResponse.json({
@@ -85,7 +121,8 @@ export async function POST(req) {
         keperluan: kunjungan.keperluan,
         menemui: kunjungan.menemui,
         waktu_hadir: waktuSekarang,
-        status: 'Hadir'
+        status: 'Hadir',
+        tanda_tangan: profil.tanda_tangan
       }
     });
 

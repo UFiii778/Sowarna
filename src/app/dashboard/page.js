@@ -18,9 +18,9 @@ export default function Dashboard() {
     const [isDarkMode, setIsDarkMode] = useState(false);
 
     const ToastUser = Swal.mixin({
-        background: '#0f172a', // bg-slate-900
-        color: '#f8fafc',      // text-slate-50
-        confirmButtonColor: '#4f46e5', // bg-indigo-600
+        background: '#0F1C2A', 
+        color: '#f8fafc',      
+        confirmButtonColor: '#46A0E5', 
         customClass: {
             popup: 'rounded-2xl border border-slate-800 shadow-2xl',
             title: 'font-black tracking-wide text-lg text-slate-100',
@@ -148,12 +148,26 @@ export default function Dashboard() {
                 .order('created_at', { ascending: false });
 
             if (riwayat) {
-                const riwayatWithQR = await Promise.all(riwayat.map(async (item) => {
-                    const qrBase64 = await QRCode.toDataURL(item.kode);
-                    return {
-                        ...item,
-                        qr_url: qrBase64
-                    };
+                // 🔥 PERBAIKAN: Menambahkan parameter 'idx' di dalam map agar tidak 'is not defined'
+                const riwayatWithQR = await Promise.all(riwayat.map(async (item, idx) => {
+                    // Proteksi jika item.kode null/kosong, buat string cadangan yang unik menggunakan id_kunjungan atau index array
+                    const textUntukQR = item.kode && item.kode.trim() !== '' ? item.kode : `SQ-UNKNOWN-${item.id_kunjungan || idx}`;
+
+                    try {
+                        const qrBase64 = await QRCode.toDataURL(textUntukQR);
+                        return {
+                            ...item,
+                            kode: textUntukQR, // Pastikan properti kode tidak bernilai null di UI
+                            qr_url: qrBase64
+                        };
+                    } catch (qrErr) {
+                        console.error("Gagal generate single QR:", qrErr);
+                        return {
+                            ...item,
+                            kode: textUntukQR,
+                            qr_url: '' // Fallback string kosong jika generate gagal
+                        };
+                    }
                 }));
                 setHistory(riwayatWithQR);
             }
@@ -193,6 +207,7 @@ export default function Dashboard() {
     const handleNewBooking = async (e) => {
         e.preventDefault();
         const kodeBooking = `SQ-${Date.now()}`;
+        const isoStringTime = new Date().toISOString();
 
         try {
             const qrBase64 = await QRCode.toDataURL(kodeBooking);
@@ -220,38 +235,53 @@ export default function Dashboard() {
                 kode: kodeBooking,
                 status: 'Pending',
                 waktu_hadir: '-',
-                created_at: new Date().toLocaleString('id-ID')
+                created_at: isoStringTime,
+                tanda_tangan_url: user.tanda_tangan_url
             };
 
             const kirimAntreanLatarBelakang = async () => {
                 try {
-                    await fetch('/api/booking', {
+                    // Diubah agar menembak ke endpoint /api/kunjungan-baru
+                    await fetch('/api/kunjungan-baru', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(dataKunjunganBaru),
-                        signal: AbortSignal.timeout(3000)
+                        body: JSON.stringify(dataKunjunganBaru), // Mengirim objek data lengkap
+                        signal: AbortSignal.timeout(5000) // Batas toleransi naik ke 5 detik
                     });
                 } catch (error) {
-                    console.error("Gagal membuat booking baru:", error);
-
-                    ToastUser.fire({
-                        title: 'Gagal Membuat Sowan!',
-                        text: `Pesan Error: ${error.message}`,
-                        icon: 'error',
-                        iconColor: '#f43f5e'
-                    });
+                    console.error("Gagal sinkronisasi data latar belakang:", error);
                 }
             };
 
+            // Jalankan fungsi pengiriman
             kirimAntreanLatarBelakang();
 
-            setHistory((prevHistory) => [{ ...dataKunjunganBaru, created_at: new Date().toISOString(), qr_url: qrBase64 }, ...prevHistory]);
+            setHistory((prevHistory) => [
+                {
+                    ...dataKunjunganBaru,
+                    qr_url: qrBase64
+                },
+                ...prevHistory
+            ]);
+
             setBookingForm({ keperluan: '', menemui: '' });
             setActiveTab('riwayat');
 
+            ToastUser.fire({
+                title: 'Sowan Berhasil Dibuat!',
+                text: 'Kode QR Anda telah diterbitkan. Silakan periksa tab riwayat.',
+                icon: 'success',
+                iconColor: '#10b981'
+            });
+
         } catch (error) {
             console.error("Gagal membuat booking baru:", error);
-            alert(`Gagal membuat booking! Pesan Error: ${error.message}`);
+            ToastUser.fire({
+                title: 'Gagal Membuat Sowan!',
+                text: `Pesan Error: ${error.message}`,
+                icon: 'error',
+                iconColor: '#f43f5e'
+            });
         }
     };
 
@@ -272,22 +302,26 @@ export default function Dashboard() {
     const currentGreeting = t[getGreetingKey()] || 'Selamat';
 
     return (
-        <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white transition-colors duration-300">
+        <div className={`flex min-h-screen transition-all duration-500 ease-in-out ${isDarkMode
+                ? 'bg-gradient-to-br from-slate-950 via-sky-900 to-sky-950/80 text-sky-100'
+                : 'bg-gradient-to-br from-sky-50 via-blue-50/40 to-blue-50 text-sky-800'
+            }`}>
+
 
             {/* SIDEBAR */}
             <aside className="w-64 bg-white dark:bg-slate-900 shadow-xl hidden md:flex flex-col border-r border-slate-200 dark:border-slate-800 transition-colors">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800">
-                    <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">SowanQR</h1>
+                    <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-white">SowanQR</h1>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{t.welcomeDash}</p>
                 </div>
                 <nav className="flex-1 p-4 space-y-2">
-                    <button onClick={() => setActiveTab('beranda')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'beranda' ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    <button onClick={() => setActiveTab('beranda')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'beranda' ? 'bg-indigo-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                         <Users2 className="w-4 h-4" /> {t.homeDash}
                     </button>
-                    <button onClick={() => setActiveTab('riwayat')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'riwayat' ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    <button onClick={() => setActiveTab('riwayat')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'riwayat' ? 'bg-indigo-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                         <ClipboardList className="w-4 h-4" /> {t.historyDash}
                     </button>
-                    <button onClick={() => setActiveTab('pengaturan')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'pengaturan' ? 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
+                    <button onClick={() => setActiveTab('pengaturan')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${activeTab === 'pengaturan' ? 'bg-indigo-50 dark:bg-red-950/50 text-red-700 dark:text-red-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}>
                         <Settings className="w-4 h-4" /> {t.settingDash}
                     </button>
                 </nav>
@@ -298,7 +332,7 @@ export default function Dashboard() {
                 <header className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div>
                         <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">
-                            {greeting}, <span className="text-indigo-600 dark:text-indigo-400">{user?.nama?.split(' ')[0]}!</span>
+                            {greeting}, <span className="text-blue-900 dark:text-sky-400">{user?.nama?.split(' ')[0]}!</span>
                         </h2>
                         <p className="text-slate-500 dark:text-slate-400">{t.welcome}</p>
                     </div>
@@ -319,12 +353,12 @@ export default function Dashboard() {
                         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
                             <h3 className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-4">{t.announcement}</h3>
                             <div className="space-y-4">
-                                <article className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100/50 dark:border-indigo-900/50">
+                                <article className=" bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 shadow-xl rounded-2xl p-6 transition-all duration-300 hover:shadow-2xl hover:border-indigo-500/30">
                                     <span className="text-xs font-bold text-indigo-600 bg-indigo-100 dark:bg-indigo-950 px-2 py-1 rounded-md">Info Pendidikan</span>
                                     <h4 className="font-bold text-slate-800 dark:text-slate-200 mt-2">Kebijakan Baru Kunjungan Sekolah</h4>
                                     <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Mulai bulan depan, seluruh tamu diwajibkan menunjukkan QR Code aktif yang berwarna Hijau (Sudah Di-scan) sebelum memasuki area tata usaha. Hal ini bertujuan untuk meningkatkan keamanan instansi.</p>
                                 </article>
-                                <article className="p-4 bg-indigo-50/50 dark:bg-indigo-950/20 rounded-xl border border-indigo-100/50 dark:border-indigo-900/50">
+                                <article className="bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 shadow-xl rounded-2xl p-6 transition-all duration-300 hover:shadow-2xl hover:border-indigo-500/30">
                                     <span className="text-xs font-bold text-green-700 bg-indigo-100 dark:bg-indigo-950 px-2 py-1 rounded-md">Info Tugas</span>
                                     <h4 className="font-bold text-slate-800 dark:text-slate-200 mt-2">PJBL (Project-Based Learning) atau Pembelajaran Berbasis Proyek</h4>
                                     <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">PjBL (Project-Based Learning) atau Pembelajaran Berbasis Proyek adalah metode pembelajaran di mana siswa atau mahasiswa belajar secara aktif dengan memecahkan masalah dunia nyata melalui pengerjaan proyek yang kompleks. Metode ini berfokus pada pengalaman langsung, investigasi mendalam, dan kreativitas hingga menghasilkan sebuah produk</p>
@@ -337,8 +371,8 @@ export default function Dashboard() {
                 {/* TAB RIWAYAT & BOOKING */}
                 {activeTab === 'riwayat' && (
                     <div className="grid lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-1 bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 h-fit">
-                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4">✨ {t.createS}</h3>
+                        <div className="lg:col-span-1 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 shadow-xl rounded-2xl p-6 transition-all duration-300 hover:shadow-2xl hover:border-indigo-500/30 h-fit">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100 mb-4"> {t.createS}</h3>
                             <form onSubmit={handleNewBooking} className="space-y-4">
                                 <div>
                                     <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">{t.labelKeperluan}</label>
@@ -387,7 +421,8 @@ export default function Dashboard() {
                                         <div className="flex-1 w-full flex flex-col items-center md:items-start justify-center md:justify-start">
                                             <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-2 w-full">
                                                 <span className="font-mono text-xs font-bold text-slate-500">{item.kode}</span>
-                                                {item.status.toLowerCase() === 'scanned' || item.status.toLowerCase() === 'hadir' ? (
+
+                                                {item.status?.toLowerCase() === 'scanned' || item.status?.toLowerCase() === 'hadir' ? (
                                                     <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-xs font-bold rounded-full">{t.qr}</span>
                                                 ) : (
                                                     <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 text-xs font-bold rounded-full">{t.waiting}</span>

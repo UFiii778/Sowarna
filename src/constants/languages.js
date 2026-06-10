@@ -25,7 +25,7 @@ export const dictionary = {
     ticketSuccess: "Tiket Kunjungan Berhasil!",
     ticketDesc: "Tunjukkan QR Code ini kepada petugas gerbang/resepsionis.",
     btnGallery: "Simpan ke Galeri",
-    btnDashboard: "➡️ Selanjutnya ke Dashboard",
+    btnDashboard: "Selanjutnya ke Dashboard",
     peringatan: "Mohon isi NIK dan Nomor WhatsApp Anda Terlebih Dahulu!",
     registerT: "Jika anda baru pertama kali memakai SowanQR, diharapkan untuk daftar terlebih dahulu",
     loginT: "Silakan verifikasi data Anda untuk langsung masuk ke Dashboard",
@@ -57,7 +57,8 @@ export const dictionary = {
     made: "Dibuat Pada",
     qrScan: "Kode QR Kamu",
     labelQr: "Tunjukkan Ke Admin Untuk di Scan",
-    clear: "Selesai & Tutup"
+    clear: "Selesai & Tutup",
+    verify: "Verifikasi OTP"
   },
   en: {
     subtitle: "Digital Visitor Book & Reservation System",
@@ -85,7 +86,7 @@ export const dictionary = {
     ticketSuccess: "Visitor Ticket Created Successfully!",
     ticketDesc: "Show this QR Code to the gate officer or receptionist.",
     btnGallery: "Save to Gallery",
-    btnDashboard: "➡️ Proceed to Dashboard",
+    btnDashboard: "Proceed to Dashboard",
     peringatan: "Please fill in your NIK and WhatsApp number first",
     night: "Night Mode",
     noon: "Day Mode",
@@ -119,6 +120,7 @@ export const dictionary = {
     made: "Made At",
     qrScan: "Your QR Code",
     labelQr: "show it to the admin to be scanned",
-    clear: "Done & Close"
+    clear: "Done & Close",
+    verify: "OTP verification"
   }
 };
