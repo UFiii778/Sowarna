@@ -7,21 +7,22 @@ import { supabase } from '@/lib/supabase';
 export async function POST(req) {
   try {
     const body = await req.json();
-    // Ambil properti 'ttd' yang dikirim dari page.js ke dalam variabel tandaTanganBase64
-    const { nama, instansi, whatsapp, nik, email, keperluan, menemui, ttd: tandaTanganBase64 } = body;
+    
+    // 🔥 FIX 1: Ubah 'ttd' menjadi 'signature' agar sinkron dengan data Base64 dari page.js
+    const { nama, instansi, whatsapp, nik, email, keperluan, menemui, signature: tandaTanganBase64 } = body;
 
-    // 1. VALIDASI INPUT (KEAMANAN & INTEGRITAS DATA)
+    // 🔥 FIX 2: Tambahkan properti 'message' di setiap respon error agar terbaca oleh pop-up merah frontend
     if (!nik || nik.trim().length < 16 || isNaN(nik)) {
-      return NextResponse.json({ success: false, error: 'NIK tidak valid. Harus berupa 16 digit angka.' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'NIK tidak valid. Harus berupa 16 digit angka.', error: 'NIK tidak valid.' }, { status: 400 });
     }
     if (!nama || !nama.trim()) {
-      return NextResponse.json({ success: false, error: 'Nama wajib diisi.' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Nama wajib diisi.', error: 'Nama wajib diisi.' }, { status: 400 });
     }
     if (!whatsapp || !whatsapp.trim()) {
-      return NextResponse.json({ success: false, error: 'Nomor WhatsApp wajib diisi.' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Nomor WhatsApp wajib diisi.', error: 'Nomor WhatsApp wajib diisi.' }, { status: 400 });
     }
     if (!tandaTanganBase64) {
-      return NextResponse.json({ success: false, error: 'Tanda tangan wajib diunggah.' }, { status: 400 });
+      return NextResponse.json({ success: false, message: 'Tanda tangan wajib diunggah.', error: 'Tanda tangan wajib diunggah.' }, { status: 400 });
     }
 
     // 2. GENERATE KODE BOOKING UNIK
@@ -38,13 +39,36 @@ export async function POST(req) {
 
     if (storageError) {
       console.error("Detail Error Supabase Storage:", storageError);
-      throw new Error(`Gagal upload tanda tangan: ${storageError.message}`);
+      return NextResponse.json({ success: false, message: `Gagal upload tanda tangan ke storage: ${storageError.message}` }, { status: 500 });
+    }
+
+    // ==========================================
+    // TAMBAHKAN VALIDASI DUPLIKASI WA SEBELUM SIMPAN
+    // ==========================================
+    const nomorWABersih = whatsapp.trim();
+    // Cek apakah nomor WA sudah digunakan oleh NIK yang berbeda
+    const { data: waExist, error: waCheckError } = await supabase
+      .from('profil_tamu')
+      .select('nik, nama')
+      .eq('whatsapp', nomorWABersih)
+      .maybeSingle();
+
+    if (waCheckError) {
+      console.error("Gagal cek validasi WA:", waCheckError);
+    }
+
+    // Jika nomor WA ketemu di DB dan NIK-nya berbeda dengan yang sedang menginput
+    if (waExist && waExist.nik !== nik.trim()) {
+      return NextResponse.json({ 
+        success: false, 
+        message: `Nomor WhatsApp tersebut sudah terdaftar atas nama ${waExist.nama}. Silakan gunakan nomor lain atau masuk lewat menu login!`,
+        error: 'WhatsApp duplicate.' 
+      }, { status: 400 });
     }
 
     const { data: { publicUrl } } = supabase.storage.from('tanda_tangan').getPublicUrl(fileName);
 
     // 4. SIMPAN KE TABEL PROFIL_TAMU (UPSERT)
-    // Ditambahkan logika fallback "|| '-'" jika isinya string kosong dari formulir
     const { error: profilError } = await supabase
       .from('profil_tamu')
       .upsert([{
@@ -58,7 +82,7 @@ export async function POST(req) {
 
     if (profilError) {
       console.error("Gagal simpan ke profil_tamu:", profilError);
-      throw profilError;
+      return NextResponse.json({ success: false, message: `Gagal menyimpan profil ke database: ${profilError.message}` }, { status: 500 });
     }
 
     // 5. INSERT KE TABEL KUNJUNGAN_TAMU
@@ -75,7 +99,7 @@ export async function POST(req) {
 
     if (kunjunganError) {
       console.error("Gagal simpan ke kunjungan_tamu:", kunjunganError);
-      throw kunjunganError;
+      return NextResponse.json({ success: false, message: `Gagal membuat data kunjungan: ${kunjunganError.message}` }, { status: 500 });
     }
 
     let sheetsSaved = false;
@@ -137,7 +161,7 @@ export async function POST(req) {
       if (formattedWhatsapp.startsWith('0')) {
         formattedWhatsapp = '62' + formattedWhatsapp.slice(1);
       } else if (formattedWhatsapp.startsWith('+')) {
-        formattedWhatsapp = formattedWhatsapp.replace('!', '');
+        formattedWhatsapp = formattedWhatsapp.replace('+', '');
       }
 
       const formData = new URLSearchParams();

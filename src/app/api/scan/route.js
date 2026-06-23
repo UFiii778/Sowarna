@@ -9,8 +9,6 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: 'Kode QR tidak valid atau kosong' }, { status: 400 });
     }
 
-    // 1. Cari data kunjungan berdasarkan kode QR yang di-scan
-    // Kita lakukan join ke 'profil_tamu' untuk mengambil nama tamu agar responnya interaktif
     const { data: kunjungan, error: fetchError } = await supabaseAdmin
       .from('kunjungan_tamu')
       .select(`
@@ -33,11 +31,7 @@ export async function POST(req) {
     const namaTamu = kunjungan.profil_tamu?.nama || 'Tamu';
     const waktuSekarang = new Date().toISOString();
 
-    // =========================================================================
-    // ALUR LOGIKA UTAMA: 1 QR DUA FUNGSI (CHECK-IN / CHECK-OUT / EXPIRED)
-    // =========================================================================
 
-    // KONDISI A: Tamu baru datang (jam_masuk masih kosong) -> PROSES CHECK-IN
     if (!kunjungan.jam_masuk) {
       const { error: updateInError } = await supabaseAdmin
         .from('kunjungan_tamu')
@@ -58,7 +52,6 @@ export async function POST(req) {
       });
     }
 
-    // KONDISI B: Tamu sudah masuk tapi belum pulang (jam_keluar kosong) -> PROSES CHECK-OUT
     if (kunjungan.jam_masuk && !kunjungan.jam_keluar) {
       const { error: updateOutError } = await supabaseAdmin
         .from('kunjungan_tamu')
@@ -79,7 +72,6 @@ export async function POST(req) {
       });
     }
 
-    // KONDISI C: Tamu sudah check-in dan sudah check-out -> PROTEKSI QR EXPIRED
     if (kunjungan.jam_masuk && kunjungan.jam_keluar) {
       return NextResponse.json({
         success: false,

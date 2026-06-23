@@ -1,7 +1,7 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'SowanQR - Sistem Kunjungan Tamu',
+  title: 'SowanQR',
   description: 'Sistem Pemantauan & Manajemen Data Tamu Real-time',
   icons: {
     icon: [
