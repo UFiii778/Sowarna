@@ -1,4 +1,4 @@
-# 🚀 SowanQR - Sistem Manajemen Kunjungan Tamu Berbasis QR Code (apliaksi di non-aktifkan)
+# 🚀 SowanQR - Sistem Manajemen Kunjungan Tamu Berbasis QR Code (aplikasi di non-aktifkan)
 
 **SowanQR** adalah aplikasi web manajemen kunjungan tamu (Visitor Management System) modern yang dirancang untuk mendigitalisasi proses check-in instansi atau sekolah secara efisien. Dengan memanfaatkan teknologi QR Code, SowanQR memotong jalur birokrasi manual, meningkatkan keamanan area, serta menyajikan sinkronisasi data transaksional yang aman dan cepat secara *real-time*.
 
